@@ -1,0 +1,60 @@
+# Production OVH — ne pas exposer Postgres ni l'API directement sur Internet
+# Usage : docker compose -f docker-compose.ovh.yml --env-file .env up -d --build
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: shawarma-postgres
+    environment:
+      POSTGRES_DB: shawarma_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/src/models/schema.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - shawarma-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    container_name: shawarma-backend
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: shawarma_db
+      JWT_SECRET: ${JWT_SECRET}
+      FRONTEND_URL: ${FRONTEND_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - shawarma-network
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: shawarma-frontend
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      - backend
+    networks:
+      - shawarma-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  shawarma-network:
+    driver: bridge
